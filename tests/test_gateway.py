@@ -68,10 +68,26 @@ class GatewayTestCase(unittest.TestCase):
         resp = self.post("/v1/config", token="errado")
         self.assertNotIn(TOKEN, resp.get_data(as_text=True))
 
-    def test_healthz_dispensa_token(self):
-        resp = self.client.get("/healthz")
+    def test_health_dispensa_token(self):
+        resp = self.client.get("/health")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["status"], "ok")
+
+    def test_health_nao_usa_sufixo_z(self):
+        # O Cloud Run reserva caminhos terminados em "z" e devolve um 404 HTML
+        # proprio antes de a requisicao chegar ao servico.
+        rotas = {str(r) for r in self.client.application.url_map.iter_rules()}
+        self.assertIn("/health", rotas)
+        self.assertFalse([r for r in rotas if r.rstrip("/").endswith("z")])
+
+    def test_caminho_desconhecido_exige_token(self):
+        # A isencao vale so para /health: qualquer outro caminho passa pela
+        # autenticacao antes de virar 404.
+        self.assertEqual(self.client.get("/healthz").status_code, 401)
+        self.assertEqual(self.client.post("/v1/qualquer").status_code, 401)
+        self.assertEqual(
+            self.client.get("/healthz", headers={AUTH_HEADER: TOKEN}).status_code, 404
+        )
 
     # --------------------------------------------- planilha fixada no servidor
 

@@ -79,7 +79,7 @@ credencial do Google.
 | `verify_write.py` | Confere intervalo gravado, tabela nativa e dropdowns |
 | `read_execucoes.py` | Leitura de volta da aba `Execuções` |
 | `prospect.py` | Rotina diaria -- INERTE ate ativacao explicita |
-| `tests/` | 37 testes (`unittest`), sem rede e sem Google |
+| `tests/` | 39 testes (`unittest`), sem rede e sem Google |
 | `docs/deploy-gateway.md` | Runbook de deploy, faturamento e API credential |
 
 Rodar os testes: `.venv/bin/python -m unittest discover -s tests -v`

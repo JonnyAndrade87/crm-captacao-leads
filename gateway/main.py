@@ -49,6 +49,10 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 # o front-end do Google tentar interpretar o valor como token OAuth do Google.
 AUTH_HEADER = "X-CRM-Token"
 
+# Unico endpoint sem token. Caminhos terminados em "z" sao reservados pelo
+# Cloud Run e nunca chegam ao servico -- por isso /health, nao /healthz.
+HEALTH_PATH = "/health"
+
 ALLOWED_STATUS = ("Em andamento", "Concluída", "Parcial", "Falhou")
 
 STRUCTURE_FIELDS = "sheets(properties,tables)"
@@ -206,7 +210,11 @@ def create_app(
 
     @app.before_request
     def _authenticate():
-        if request.path == "/healthz":
+        # Unico caminho isento. Nao usar sufixo "z" (/healthz): o Cloud Run
+        # reserva caminhos terminados em "z" e responde um 404 HTML proprio
+        # antes de a requisicao chegar ao servico.
+        # https://docs.cloud.google.com/run/docs/known-issues#reserved_url_paths
+        if request.path == HEALTH_PATH:
             return None
         expected = app.config["CRM"].token
         got = request.headers.get(AUTH_HEADER, "")
@@ -252,8 +260,8 @@ def create_app(
 
     # ---------------------------------------------------------------- rotas
 
-    @app.get("/healthz")
-    def healthz():
+    @app.get(HEALTH_PATH)
+    def health():
         return jsonify({"status": "ok"})
 
     @app.post("/v1/config")

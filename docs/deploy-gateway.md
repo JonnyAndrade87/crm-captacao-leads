@@ -112,8 +112,8 @@ gcloud run deploy "$SERVICE" \
 Sobre `--allow-unauthenticated`: é **necessário**. O proxy do ambiente não faz
 autenticação IAM do Google; ele injeta um header estático. A porta de entrada
 fica aberta e **a autenticação é o `X-CRM-Token`**, conferido pelo serviço com
-`hmac.compare_digest`. Sem o header correto, todo endpoint (menos `/healthz`)
-devolve 401.
+`hmac.compare_digest`. Sem o header correto, **todo** endpoint (menos `/health`)
+devolve 401 -- inclusive caminhos que nao existem.
 
 Se a organização tiver a política `constraints/iam.allowedPolicyMemberDomains`,
 `allUsers` pode ser bloqueado e o comando falha — nesse caso é preciso uma
@@ -134,8 +134,13 @@ Fumaça sem token (deve responder `{"status":"ok"}`):
 
 ```bash
 curl -sS "$(gcloud run services describe "$SERVICE" --region="$REGION" \
-  --format='value(status.url)')/healthz"
+  --format='value(status.url)')/health"
 ```
+
+> O caminho é `/health`, **sem o "z"**. O Cloud Run reserva caminhos terminados
+> em `z` (`/healthz`, `/readyz`, ...) e responde um 404 HTML próprio antes de a
+> requisição chegar ao serviço —
+> [known issues](https://docs.cloud.google.com/run/docs/known-issues#reserved_url_paths).
 
 ## Passo 5 — API credential no ambiente de nuvem
 
