@@ -1,0 +1,9 @@
+# Ambiente Python isolado criado pelo hook SessionStart
+.venv/
+__pycache__/
+*.pyc
+
+# Credenciais -- a chave da conta de servico nunca vai para o Git
+*.json
+!.claude/settings.json
+.env
