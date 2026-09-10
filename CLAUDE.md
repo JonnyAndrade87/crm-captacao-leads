@@ -41,9 +41,29 @@ com **conta de servico**.
 - Rascunho de abordagem individual. **Envio de mensagens esta fora do escopo.**
 - Apos gravar: ler de volta e registrar o resultado em **Execuções**.
 
+## Ambiente Python (obrigatorio)
+- **Todo comando do CRM roda por `.venv/bin/python`**, nunca pelo `python` do
+  sistema. O Python do sistema traz um `cryptography` do Debian quebrado
+  (sem `_cffi_backend`) que derruba o `google-auth` no import do
+  `service_account`.
+- O `.venv` e criado **sem** `--system-site-packages`, entao nao enxerga
+  `dist-packages` e a versao do PyPI prevalece. Nunca "consertar" o Python do
+  sistema com `pip install --ignore-installed`.
+- Quem monta o `.venv` e o hook `SessionStart`
+  (`.claude/hooks/session-start.sh`, registrado em `.claude/settings.json`):
+  roda so na nuvem (`CLAUDE_CODE_REMOTE`), acha o repo por `CLAUDE_PROJECT_DIR`,
+  instala `requirements.txt` e roda `pip check`. Se o `pip check` acusar
+  inconsistencia, o hook aborta com status != 0 em vez de declarar sucesso.
+  E idempotente.
+- O campo de **setup do ambiente de nuvem fica vazio** de proposito.
+- `cryptography`/`cffi` nao vao no `requirements.txt`: chegam como dependencia
+  transitiva de `google-auth`.
+- Se o `.venv` nao existir (hook ainda nao no branch padrao): `bash setup.sh`.
+
 ## Scripts
 | Arquivo | Funcao |
 |---|---|
+| `.claude/hooks/session-start.sh` | Cria o `.venv` e instala deps na abertura da sessao (so na nuvem) |
 | `sheets_client.py` | Auth (conta de servico via env) + leitura + append |
 | `inspect_base.py` | Cabecalhos, limites, tabelas nativas e IDs existentes |
 | `append_execucao.py` | Acrescenta 1 linha em `Execuções` e verifica |
@@ -64,4 +84,5 @@ com **conta de servico**.
 - Nunca versionar a chave. `.gitignore` bloqueia `*.json` e `.env`.
 
 ## Estado atual
-Conexao em validacao. Prospeccao diaria **nao** agendada.
+Conexao em validacao. Prospeccao diaria **nao** agendada. Credenciais nao
+configuradas (`GOOGLE_SERVICE_ACCOUNT_JSON` ausente no ambiente).
