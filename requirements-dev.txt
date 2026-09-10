@@ -1,0 +1,3 @@
+# Dependencias so para rodar os testes desta sessao (nao vao para o Cloud Run,
+# nao sao necessarias para operar o CRM).
+Flask>=3.0,<4

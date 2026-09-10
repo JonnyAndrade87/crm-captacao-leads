@@ -80,10 +80,8 @@ def verify(updated_range: str, expected_row: list) -> bool:
             ok = False
 
     # 4. Validacoes / dropdowns na linha gravada
-    grid = get_grid(
-        updated_range,
-        fields="sheets(data(rowData(values(dataValidation,userEnteredValue))))",
-    )
+    # Os campos lidos (dataValidation, userEnteredValue) sao fixados no gateway.
+    grid = get_grid(updated_range)
     try:
         cells = grid["sheets"][0]["data"][0]["rowData"][0].get("values", [])
     except (KeyError, IndexError):
