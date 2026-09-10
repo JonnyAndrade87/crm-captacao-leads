@@ -43,6 +43,7 @@ o Python e o hook `SessionStart` do repositorio:
 - `.claude/hooks/session-start.sh` -- roda **so na nuvem** (`CLAUDE_CODE_REMOTE`),
   localiza o repo por `CLAUDE_PROJECT_DIR`, cria `.venv` isolado
   (**sem** `--system-site-packages`), instala `requirements.txt` e roda `pip check`.
+  `pip check` falhando aborta o hook com status != 0.
 - Registrado em `.claude/settings.json`. Passa a valer para toda sessao nova
   depois que o commit chegar no branch padrao.
 - E idempotente: se o `.venv` ja existe, o pip so confere o que falta.

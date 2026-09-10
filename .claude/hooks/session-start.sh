@@ -7,7 +7,7 @@
 # O que faz:
 #   1. cria .venv isolado (sem --system-site-packages) se ainda nao existir;
 #   2. instala requirements.txt dentro do .venv;
-#   3. roda `pip check`;
+#   3. roda `pip check` -- se falhar, aborta com status != 0;
 #   4. poe o .venv no PATH da sessao via CLAUDE_ENV_FILE.
 #
 # Nao le credenciais, nao acessa a Google Sheets, nao dispara prospeccao.
@@ -41,8 +41,12 @@ PY="$VENV/bin/python"
 "$PY" -m pip install --quiet --upgrade pip
 "$PY" -m pip install --quiet --requirement "$REQS"
 
+# pip check quebrado = ambiente inconsistente. Falha alto: nao adianta a sessao
+# comecar e so descobrir na primeira chamada da Sheets API.
 if ! "$PY" -m pip check; then
-  echo "session-start: ATENCAO -- pip check reportou inconsistencias (veja acima)." >&2
+  echo "session-start: FALHOU -- pip check reportou inconsistencias (veja acima)." >&2
+  echo "session-start: ambiente NAO esta pronto." >&2
+  exit 1
 fi
 
 # Deixa o interpretador do venv como padrao para o resto da sessao.

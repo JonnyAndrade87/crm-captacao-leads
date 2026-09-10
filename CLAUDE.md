@@ -52,7 +52,9 @@ com **conta de servico**.
 - Quem monta o `.venv` e o hook `SessionStart`
   (`.claude/hooks/session-start.sh`, registrado em `.claude/settings.json`):
   roda so na nuvem (`CLAUDE_CODE_REMOTE`), acha o repo por `CLAUDE_PROJECT_DIR`,
-  instala `requirements.txt` e roda `pip check`. E idempotente.
+  instala `requirements.txt` e roda `pip check`. Se o `pip check` acusar
+  inconsistencia, o hook aborta com status != 0 em vez de declarar sucesso.
+  E idempotente.
 - O campo de **setup do ambiente de nuvem fica vazio** de proposito.
 - `cryptography`/`cffi` nao vao no `requirements.txt`: chegam como dependencia
   transitiva de `google-auth`.
