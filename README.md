@@ -139,28 +139,33 @@ Efeito colateral no `verify_write.py`: a checagem 4 procura `dataValidation` por
 celula e imprime "nenhuma validacao/dropdown detectada" mesmo com o dropdown
 correto. Nessa aba o sinal que vale e a checagem 3 (cobertura da tabela nativa).
 
-**Linhas em branco antes do registro.** O teste caiu na linha 502, com 2-501
-vazias, porque `values.append` grava apos o fim do **range da tabela nativa** --
-e `CRM_Execucoes` foi criada como `A1:J501`, ou seja, cabecalho mais 500 linhas
-reservadas. `Leads` e `Acompanhamento` estao pre-dimensionadas igual e vao
-repetir isso no primeiro append.
+**Linhas em branco antes do registro -- resolvido.** O teste tinha caido na linha
+502, com 2-501 vazias, porque `values.append` grava apos o fim do **range da
+tabela nativa** -- e `CRM_Execucoes` foi criada como `A1:J501`, ou seja,
+cabecalho mais 500 linhas reservadas. As tres tabelas nasceram assim.
 
-Menor correcao possivel, feita **a mao na UI do Sheets** (o gateway nao expoe
-`batchUpdate` de proposito): selecionar as linhas em branco reservadas e apaga-las,
-encolhendo a tabela ate o conteudo real. Nao mexer no dropdown, que sobrevive a
-redimensionamento por ser propriedade de **coluna** da tabela, nao das celulas.
-Appends seguintes entram logo abaixo da ultima linha e estendem a tabela de uma
-em uma.
+A correcao foi a menor possivel e feita **a mao na UI do Sheets** (o gateway nao
+expoe `batchUpdate` de proposito): apagar as linhas reservadas, encolhendo cada
+tabela ate o conteudo real. Estado conferido depois, so leitura:
 
-Sobre esse ultimo ponto, o que foi medido e o que foi inferido: `CRM_Execucoes`
-hoje termina em `endRowIndex` 502 e a aba tem 1001 linhas, enquanto as outras
-tres tabelas, criadas do mesmo jeito, terminam em 501 com 1000 linhas. Os dois
-deltas de +1 indicam que a tabela se estendeu ao receber o append -- mas isso e
-leitura do estado final, nao uma comparacao antes/depois, que ninguem registrou.
-Confirmar no proximo registro real.
+| Aba | Tabela | Range | Linha de dados |
+|---|---|---|---|
+| `Leads` | `CRM_Leads` | `A1:W2` | 1, vazia |
+| `Acompanhamento` | `CRM_Acompanhamento` | `A1:L2` | 1, vazia |
+| `Execuções` | `CRM_Execucoes` | `A1:J2` | 1, com o registro de teste |
+
+Nada se perdeu no redimensionamento: cabecalhos com as 23, 12 e 10 colunas
+originais, e os dropdowns de coluna todos de pe -- `Encaixe no perfil`, `Etapa`,
+`Canal` e `Status`. Era esperado, ja que a regra e propriedade de **coluna** da
+tabela e nao das celulas.
+
+**O que ainda depende do primeiro append real.** `Leads` e `Acompanhamento`
+ficaram com uma linha de dados vazia dentro do range. O append pode preencher
+essa linha 2 ou entrar na 3 estendendo a tabela -- a API nao documenta o caso da
+linha reservada vazia, e sem gravar nao da para saber. O `verify_write.py`
+reporta a linha exata; vale conferir no primeiro lead de verdade em vez de supor.
 
 ## Ativacao futura (nao agora)
-`prospect.py` continua inerte. Deploy e teste de conexao ja estao validados; falta
-apenas a **autorizacao explicita** do Jonny para criar a Routine diaria. Antes
-disso, convem limpar as linhas reservadas de `Leads` e `Acompanhamento` (ver
-"Sobre preservacao"), para o primeiro lead real nao nascer na linha 502.
+`prospect.py` continua inerte. Deploy, teste de conexao e limpeza das tabelas ja
+estao validados; falta apenas a **autorizacao explicita** do Jonny para criar a
+Routine diaria.

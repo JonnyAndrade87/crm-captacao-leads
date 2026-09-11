@@ -28,7 +28,8 @@ credencial do Google.
   linha. Em "ATENCAO", registrar o que falhou e nao declarar sucesso total.
 - `values.append` grava **logo apos o fim do range da tabela nativa**, nao apos a
   ultima celula preenchida. Tabela pre-dimensionada com linhas vazias = registro
-  novo la embaixo. Ver "Estado atual".
+  novo la embaixo. As tabelas ja foram encolhidas ate o conteudo real -- ver
+  "Estado atual".
 
 ### Dropdown por coluna (verificado em 11/09/2026)
 O dropdown de Status **nao** e validacao por celula: nenhuma celula da coluna D
@@ -143,17 +144,27 @@ Gateway **publicado, autenticado e validado de ponta a ponta** (11/09/2026).
 
 Prospeccao diaria continua **nao** agendada e `prospect.py` continua inerte.
 
-### Pendencia conhecida: 500 linhas em branco em `Execuções`
-O registro de teste caiu na **linha 502**, com as linhas 2-501 vazias. Causa: a
-tabela nativa `CRM_Execucoes` foi criada pre-dimensionada em `A1:J501`
-(cabecalho + 500 linhas reservadas) e `values.append` grava **depois do fim do
-range da tabela**, nao depois da ultima celula preenchida. As linhas vazias
-reservadas contam como parte da tabela.
+### Linhas reservadas em branco -- RESOLVIDO (11/09/2026)
+As tres tabelas nasceram pre-dimensionadas com 500 linhas reservadas, e como
+`values.append` grava **depois do fim do range da tabela** (nao depois da ultima
+celula preenchida), o registro de teste tinha caido na linha 502.
 
-`Leads` e `Acompanhamento` estao com tabelas de `endRowIndex` 501 e vao repetir
-o mesmo efeito no primeiro append.
+O Jonny apagou as linhas reservadas a mao na UI do Sheets -- o gateway nao expoe
+`batchUpdate` de proposito. Estado conferido depois, so leitura:
 
-Correcao (manual, na UI do Sheets -- o gateway nao expoe `batchUpdate` de
-proposito): apagar as linhas em branco reservadas antes do proximo registro,
-encolhendo a tabela ate o conteudo real. Ver "Dropdown por coluna" acima para
-por que isso nao derruba o dropdown.
+| Aba | Tabela | Range | Linha de dados |
+|---|---|---|---|
+| `Leads` | `CRM_Leads` | `A1:W2` | 1, vazia |
+| `Acompanhamento` | `CRM_Acompanhamento` | `A1:L2` | 1, vazia |
+| `Execuções` | `CRM_Execucoes` | `A1:J2` | 1, com `TESTE-CONEXAO-20260911-101325` |
+
+Cabecalhos intactos (23, 12 e 10 colunas, ordem original) e dropdowns de coluna
+preservados: `Encaixe no perfil` em `Leads`, `Etapa` e `Canal` em
+`Acompanhamento`, `Status` em `Execuções`. Redimensionar a tabela nao derruba a
+regra, justamente porque ela e propriedade de coluna e nao das celulas.
+
+**Ainda em aberto, e so o primeiro append real responde:** `Leads` e
+`Acompanhamento` tem uma linha de dados vazia dentro do range. O append pode
+preencher essa linha 2 ou entrar na 3 estendendo a tabela -- depende de como a
+API trata a linha reservada vazia, e nao da para saber sem gravar. O
+`verify_write.py` reporta a linha exata; conferir no primeiro lead de verdade.
