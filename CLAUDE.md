@@ -96,12 +96,47 @@ Duas consequencias:
 | `inspect_base.py` | Cabecalhos, limites, tabelas nativas e IDs existentes |
 | `append_execucao.py` | Acrescenta 1 linha em `Execuções` e verifica |
 | `verify_write.py` | Confere intervalo gravado, tabela nativa e dropdowns |
+| `web_audit.py` | Verifica site em navegador renderizado (desktop + celular); separa ACHADO de INCONCLUSIVO |
 | `read_execucoes.py` | Leitura de volta da aba `Execuções` |
 | `prospect.py` | Rotina diaria -- INERTE ate ativacao explicita |
-| `tests/` | 39 testes (`unittest`), sem rede e sem Google |
+| `tests/` | 65 testes (`unittest`), sem rede, sem Google e sem navegador |
 | `docs/deploy-gateway.md` | Runbook de deploy, faturamento e API credential |
 
 Rodar os testes: `.venv/bin/python -m unittest discover -s tests -v`
+
+## Verificacao de site (`web_audit.py`)
+
+Conferir site por HTML bruto gera falso positivo em serie. Ja aconteceram, todos
+descartados depois de checar: lazy-load lido como imagem quebrada, `406` de WAF
+lido como site fora do ar, timeout isolado lido como lentidao cronica, e
+subdominio de plataforma lido como ausencia de dominio proprio.
+
+Por isso a verificacao roda em Chromium, em duas viewports (1366x900 e 390x844),
+e o resultado sai em duas pilhas separadas: **ACHADO** e **INCONCLUSIVO**.
+
+- **Nenhum caminho de binario fica embutido.** Quem resolve o navegador e o
+  proprio Playwright, lendo `PLAYWRIGHT_BROWSERS_PATH`.
+- **A versao do pacote precisa casar com o navegador da imagem.** A imagem de
+  nuvem traz o Chromium revisao **1194** (141.0.7390.37), que e o que o pacote
+  **1.56.x** espera. Pacote mais novo procura outra revisao e o launch falha com
+  "Executable doesn't exist". Ao subir de versao, confira a revisao em
+  `playwright/driver/package/browsers.json` antes.
+- **Rede:** o Chromium nao alcanca o proxy do ambiente sozinho. O modulo entao
+  serve as requisicoes da pagina por `requests`, que le `HTTPS_PROXY` e o bundle
+  de CA do ambiente. Isso **nao contorna restricao** -- e o mesmo proxy
+  sancionado, por um cliente que sabe falar com ele. Verificacao de TLS fica
+  ligada em todo ponto.
+- **Certificado do alvo nao e avaliado**: o TLS e reterminado no proxy, entao o
+  certificado visto seria o do proxy.
+- **Autoteste obrigatorio:** antes de confiar em qualquer resultado, o modulo
+  audita uma URL de controle. Controle falho = rodada INCONCLUSIVA, porque o
+  problema esta na ferramenta e nao nos sites.
+- Se uma viewport levar bloqueio e a outra passar, os achados da pagina saem
+  marcados com `CONFIRMAR` -- o que passou pode ter passado degradado.
+
+Regra que vale junto: ano de copyright antigo, plataforma usada, subdominio de
+plataforma, contato so por formulario e registro de MX **nao justificam projeto
+por si sos**.
 
 ## Credenciais e alcance (importante)
 - **Nao existe chave privada JSON em lugar nenhum.** No Cloud Run a conta de
@@ -144,6 +179,11 @@ Gateway **publicado, autenticado e validado de ponta a ponta** (11/09/2026).
 
 Prospeccao diaria continua **nao** agendada e `prospect.py` continua inerte.
 
+Primeiros leads reais gravados e conferidos em 11/09/2026:
+`LEAD-HOLYSANDWICHSHOP-PT` (Porto) e `LEAD-PAOBRASILBAKERY-COM` (Framingham, MA),
+nas linhas 3 e 4. Nenhum marcado como contatado -- `Acompanhamento` segue so com
+cabecalho e as abordagens ficaram como rascunho nao enviado.
+
 ### Linhas reservadas em branco -- RESOLVIDO (11/09/2026)
 As tres tabelas nasceram pre-dimensionadas com 500 linhas reservadas, e como
 `values.append` grava **depois do fim do range da tabela** (nao depois da ultima
@@ -163,8 +203,11 @@ preservados: `Encaixe no perfil` em `Leads`, `Etapa` e `Canal` em
 `Acompanhamento`, `Status` em `Execuções`. Redimensionar a tabela nao derruba a
 regra, justamente porque ela e propriedade de coluna e nao das celulas.
 
-**Ainda em aberto, e so o primeiro append real responde:** `Leads` e
-`Acompanhamento` tem uma linha de dados vazia dentro do range. O append pode
-preencher essa linha 2 ou entrar na 3 estendendo a tabela -- depende de como a
-API trata a linha reservada vazia, e nao da para saber sem gravar. O
-`verify_write.py` reporta a linha exata; conferir no primeiro lead de verdade.
+**RESPONDIDO pelo primeiro append real (11/09/2026):** o append **nao**
+aproveita a linha reservada vazia. Gravou em `Leads!A3:W3`, estendendo a tabela,
+e a **linha 2 ficou em branco**. Confirma a regra: `values.append` grava depois
+do fim do range da tabela, nao depois da ultima celula preenchida.
+
+Consequencia pratica: `Leads` tem hoje uma linha 2 vazia entre o cabecalho e o
+primeiro lead, removivel so a mao na UI do Sheets. `Acompanhamento` ainda tem a
+linha reservada e vai se comportar igual no primeiro registro dela.

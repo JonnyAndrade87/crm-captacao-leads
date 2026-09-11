@@ -1,2 +1,17 @@
+# Dependencias de execucao do CRM.
+#
+# google-*: usadas SOMENTE pelo gateway (gateway/main.py) e pelos testes dele.
+# O cliente da sessao (sheets_client.py) nao fala com a Google API.
 google-api-python-client>=2.140,<3
 google-auth>=2.30,<3
+
+# Verificacao de site em navegador renderizado (web_audit.py).
+# O navegador NAO e baixado aqui: no ambiente de nuvem ele ja vem instalado e
+# PLAYWRIGHT_BROWSERS_PATH aponta para ele. O hook SessionStart define
+# PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 para o pip nao tentar baixar de novo.
+# Versao CASADA com o navegador da imagem de nuvem: o pacote 1.56.x espera a
+# revisao 1194 do Chromium, que e a instalada (141.0.7390.37). Pacote mais novo
+# procura outra revisao e o launch falha. Ao subir de versao, confira a
+# revisao em playwright/driver/package/browsers.json.
+playwright>=1.56,<1.57
+requests>=2.32,<3

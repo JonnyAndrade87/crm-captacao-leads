@@ -38,8 +38,12 @@ fi
 PY="$VENV/bin/python"
 
 # Idempotente: pip resolve o que ja esta satisfeito e nao reinstala.
+#
+# PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1: o navegador ja vem na imagem da nuvem e
+# PLAYWRIGHT_BROWSERS_PATH aponta para ele. Sem isto o postinstall do playwright
+# tentaria baixar outra copia -- lento e desnecessario.
 "$PY" -m pip install --quiet --upgrade pip
-"$PY" -m pip install --quiet --requirement "$REQS"
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 "$PY" -m pip install --quiet --requirement "$REQS"
 
 # pip check quebrado = ambiente inconsistente. Falha alto: nao adianta a sessao
 # comecar e so descobrir na primeira chamada da Sheets API.
@@ -58,3 +62,17 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
 fi
 
 echo "session-start: ambiente pronto -- $("$PY" --version), deps de requirements.txt instaladas em .venv"
+
+# Diagnostico do navegador usado por web_audit.py. NAO e fatal: o CRM le e grava
+# na planilha sem navegador; so a verificacao de site depende dele.
+if "$PY" - <<'PYCHECK' 2>/dev/null
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    p.chromium.launch(args=["--no-sandbox"]).close()
+PYCHECK
+then
+  echo "session-start: Chromium disponivel -- web_audit.py pode rodar."
+else
+  echo "session-start: AVISO -- Chromium indisponivel; web_audit.py nao vai rodar." >&2
+  echo "session-start: leitura/escrita da planilha seguem funcionando." >&2
+fi
