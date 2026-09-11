@@ -26,6 +26,24 @@ credencial do Google.
 - **Toda escrita e conferida depois** por `verify_write.py`: intervalo gravado,
   releitura dos valores, cobertura da tabela nativa e validacoes/dropdowns na
   linha. Em "ATENCAO", registrar o que falhou e nao declarar sucesso total.
+- `values.append` grava **logo apos o fim do range da tabela nativa**, nao apos a
+  ultima celula preenchida. Tabela pre-dimensionada com linhas vazias = registro
+  novo la embaixo. Ver "Estado atual".
+
+### Dropdown por coluna (verificado em 11/09/2026)
+O dropdown de Status **nao** e validacao por celula: nenhuma celula da coluna D
+tem `dataValidation`, nem o cabecalho, nem a linha gravada. A regra vive nas
+**propriedades de coluna da tabela nativa** -- `columnType: DROPDOWN` mais
+`dataValidationRule` com a lista fechada -- e vale para toda linha dentro do
+range da tabela.
+
+Duas consequencias:
+1. Linha que cai **dentro** do range da tabela herda o dropdown automaticamente.
+   Foi o que aconteceu com o registro de teste.
+2. O item 4 do `verify_write.py` le `dataValidation` por celula e por isso imprime
+   "nenhuma validacao/dropdown detectada" **mesmo quando o dropdown esta certo**.
+   Nessa aba, o sinal confiavel e o item 3 (cobertura da tabela nativa), nao o 4.
+   Nao tratar esse INFO como falha.
 - Antes de gravar: `inspect_base.py` (limites das abas + IDs existentes).
 
 ### Aba Execuções
@@ -109,7 +127,33 @@ Rodar os testes: `.venv/bin/python -m unittest discover -s tests -v`
 - Nunca versionar segredo. `.gitignore` bloqueia `*.json` e `.env`.
 
 ## Estado atual
-Gateway **implementado e testado, ainda nao publicado**. Deploy pendente
-(exige a conta Google do Jonny -- ver `docs/deploy-gateway.md`). API credential
-ainda nao cadastrada. Conexao com a planilha ainda nao validada. Prospeccao
-diaria **nao** agendada.
+Gateway **publicado, autenticado e validado de ponta a ponta** (11/09/2026).
+
+- Deploy no Cloud Run feito. Host:
+  `https://crm-sheets-gateway-888305689319.southamerica-east1.run.app`
+- API credential cadastrada no host exato (nao `*.run.app`). O proxy injeta o
+  `X-CRM-Token`; sem ele o gateway devolveria 401, entao o `200` das chamadas ja
+  prova que a credencial esta ativa.
+- `/health` -> `200 {"status":"ok"}`.
+- `/v1/config` -> `200`, com `spreadsheet_id` batendo com o desta pagina e a
+  allowlist de abas como esperado. **Todas as rotas `/v1/*` sao POST**; um `GET`
+  devolve `405` -- isso e a rota funcionando, nao falha do servico.
+- Teste de escrita gravado e conferido: `TESTE-CONEXAO-20260911-101325`,
+  Status `Concluída`, contadores zerados. Readback confere.
+
+Prospeccao diaria continua **nao** agendada e `prospect.py` continua inerte.
+
+### Pendencia conhecida: 500 linhas em branco em `Execuções`
+O registro de teste caiu na **linha 502**, com as linhas 2-501 vazias. Causa: a
+tabela nativa `CRM_Execucoes` foi criada pre-dimensionada em `A1:J501`
+(cabecalho + 500 linhas reservadas) e `values.append` grava **depois do fim do
+range da tabela**, nao depois da ultima celula preenchida. As linhas vazias
+reservadas contam como parte da tabela.
+
+`Leads` e `Acompanhamento` estao com tabelas de `endRowIndex` 501 e vao repetir
+o mesmo efeito no primeiro append.
+
+Correcao (manual, na UI do Sheets -- o gateway nao expoe `batchUpdate` de
+proposito): apagar as linhas em branco reservadas antes do proximo registro,
+encolhendo a tabela ate o conteudo real. Ver "Dropdown por coluna" acima para
+por que isso nao derruba o dropdown.

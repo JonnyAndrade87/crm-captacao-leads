@@ -51,8 +51,20 @@ variavel usada e `CRM_GATEWAY_URL`, que e apenas um endereco.
 6. `.gitignore` bloqueia `*.json` / `.env`.
 
 ## Deploy
-Ainda **nao executado**. Runbook completo, incluindo os requisitos de
-faturamento, em [`docs/deploy-gateway.md`](docs/deploy-gateway.md).
+**Executado e validado em 11/09/2026.** Runbook completo, incluindo os requisitos
+de faturamento, em [`docs/deploy-gateway.md`](docs/deploy-gateway.md).
+
+| Verificacao | Resultado |
+|---|---|
+| Host do servico | `crm-sheets-gateway-888305689319.southamerica-east1.run.app` |
+| API credential (host exato, sem curinga) | ativa -- o `200` so acontece com o token injetado |
+| `POST /health` | `200` -- `{"status":"ok"}` |
+| `POST /v1/config` | `200` -- `spreadsheet_id` e allowlist conferem |
+| Teste de escrita | `TESTE-CONEXAO-20260911-101325`, Status `Concluída` |
+| Readback | confere com o gravado |
+
+Detalhe util: **todas as rotas `/v1/*` sao POST**. Um `GET` devolve
+`405 Method Not Allowed` -- e a rota respondendo, nao o servico fora do ar.
 
 Resumo do faturamento: Cloud Run, Artifact Registry, Cloud Build e Secret
 Manager **exigem uma conta de faturamento vinculada ao projeto**, mas o uso
@@ -116,6 +128,39 @@ Usa a escrita menos invasiva (`values.append` + `INSERT_ROWS`, nunca
 que os dropdowns sejam herdados -- por isso a verificacao roda sempre e reporta
 `PASS` / `ATENCAO` sem corrigir nada automaticamente.
 
+### O que a inspecao de 11/09/2026 mostrou
+**Dropdown preservado, por heranca de coluna.** A lista fechada de Status nao e
+validacao por celula -- nenhuma celula da coluna D tem `dataValidation`. Ela vive
+nas propriedades de coluna da tabela nativa (`columnType: DROPDOWN` +
+`dataValidationRule`) e alcanca toda linha dentro do range da tabela. Logo, linha
+gravada dentro da tabela herda o dropdown sem precisar de nada.
+
+Efeito colateral no `verify_write.py`: a checagem 4 procura `dataValidation` por
+celula e imprime "nenhuma validacao/dropdown detectada" mesmo com o dropdown
+correto. Nessa aba o sinal que vale e a checagem 3 (cobertura da tabela nativa).
+
+**Linhas em branco antes do registro.** O teste caiu na linha 502, com 2-501
+vazias, porque `values.append` grava apos o fim do **range da tabela nativa** --
+e `CRM_Execucoes` foi criada como `A1:J501`, ou seja, cabecalho mais 500 linhas
+reservadas. `Leads` e `Acompanhamento` estao pre-dimensionadas igual e vao
+repetir isso no primeiro append.
+
+Menor correcao possivel, feita **a mao na UI do Sheets** (o gateway nao expoe
+`batchUpdate` de proposito): selecionar as linhas em branco reservadas e apaga-las,
+encolhendo a tabela ate o conteudo real. Nao mexer no dropdown, que sobrevive a
+redimensionamento por ser propriedade de **coluna** da tabela, nao das celulas.
+Appends seguintes entram logo abaixo da ultima linha e estendem a tabela de uma
+em uma.
+
+Sobre esse ultimo ponto, o que foi medido e o que foi inferido: `CRM_Execucoes`
+hoje termina em `endRowIndex` 502 e a aba tem 1001 linhas, enquanto as outras
+tres tabelas, criadas do mesmo jeito, terminam em 501 com 1000 linhas. Os dois
+deltas de +1 indicam que a tabela se estendeu ao receber o append -- mas isso e
+leitura do estado final, nao uma comparacao antes/depois, que ninguem registrou.
+Confirmar no proximo registro real.
+
 ## Ativacao futura (nao agora)
-`prospect.py` esta inerte. A Routine diaria so sera criada apos o deploy, o teste
-de conexao validado e autorizacao explicita.
+`prospect.py` continua inerte. Deploy e teste de conexao ja estao validados; falta
+apenas a **autorizacao explicita** do Jonny para criar a Routine diaria. Antes
+disso, convem limpar as linhas reservadas de `Leads` e `Acompanhamento` (ver
+"Sobre preservacao"), para o primeiro lead real nao nascer na linha 502.
