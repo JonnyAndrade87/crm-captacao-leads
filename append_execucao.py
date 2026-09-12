@@ -2,7 +2,8 @@
 """Acrescenta UMA linha a aba 'Execucoes' e, em seguida, verifica a escrita.
 
 - Escrita apenas via values().append (INSERT_ROWS / RAW). Nunca batchUpdate.
-- Aborta sem escrever se o ID informado ja existir.
+- Aborta sem escrever se o ID informado ja existir. O gateway repete essa
+  checagem no servidor e devolve 409 se o ID chegar duplicado mesmo assim.
 - Apos escrever, roda verify_write.verify(): intervalo gravado, releitura,
   cobertura de tabela nativa e dropdowns na linha nova.
 
@@ -29,7 +30,7 @@ import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sheets_client import append_row, read_range
+from sheets_client import GatewayError, append_row, read_range
 from verify_write import verify
 
 TAB = "Execuções"
@@ -102,7 +103,12 @@ def main() -> None:
     for col, val in zip(COLUMNS, row):
         print(f"  {col}: {val}")
 
-    resp = append_row(TAB, row)
+    try:
+        resp = append_row(TAB, row)
+    except GatewayError as exc:
+        if exc.status == 409:
+            raise SystemExit(f"Gateway recusou por duplicidade: {exc.message}")
+        raise SystemExit(f"Gateway recusou a escrita (HTTP {exc.status}): {exc.message}")
     upd = resp.get("updates", {})
     updated_range = upd.get("updatedRange", "")
     print("\nEscrita concluida:")

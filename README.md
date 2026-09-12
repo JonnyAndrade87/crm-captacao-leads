@@ -1,40 +1,75 @@
 # crm-captacao-leads
 
 Automacao de captacao de leads que roda como **Claude Code cloud Routine** e
-grava numa Google Sheets existente pela **Google Sheets API** (conta de servico).
+grava numa Google Sheets existente **atraves de um gateway proprio no Cloud
+Run**. A sessao do Claude nunca tem credencial do Google.
 
 ## Onde roda
 Ambiente de nuvem do Claude Code (claude.ai/code) vinculado a este repositorio
 GitHub privado. As Routines executam nesse ambiente conforme agendamento, com o
 Mac desligado. VM Ubuntu efemera, Python pre-instalado.
 
-## Credenciais -- leia antes de subir a chave
-- A chave JSON da conta de servico entra como **variavel de ambiente**
-  `GOOGLE_SERVICE_ACCOUNT_JSON` na config do ambiente de nuvem.
-- Pela doc oficial da Anthropic (code.claude.com/docs/en/cloud-environments):
-  as variaveis de ambiente sao **copiadas para variaveis comuns legiveis por
-  qualquer comando da sessao** e **"anyone who uses the environment can read
-  the values"**. O dialogo da propria Anthropic avisa para nao colocar segredos
-  ali. Ou seja: **a chave sera legivel dentro da VM da sessao (inclusive por
-  comandos do Claude).**
-- O recurso "API credentials" (proxy que injeta um token sem o agente ver) e
-  Pro/Max, mas **nao se aplica** a uma conta de servico Google: o fluxo assina
-  um JWT localmente com a chave privada, entao a chave precisa estar na VM.
-- Manter a chave fora de qualquer VM gerenciada pela Anthropic so e possivel com
-  um **self-hosted environment** (runner proprio) -- bem mais pesado; opcional.
+## Autenticacao -- sem chave privada em lugar nenhum
 
-### Reducao de alcance (o que fazer em vez de "ocultar")
-1. Projeto Google Cloud dedicado (`crm-captacao-leads`) e conta de servico usada
-   so nisto.
+```
+sessao Claude ──X-CRM-Token (injetado pelo proxy)──▶ Cloud Run (gateway)
+gateway ──ADC da conta de servico anexada──▶ sheets.googleapis.com
+```
+
+### Por que nao da para autenticar direto
+O recurso **API credentials** do ambiente de nuvem injeta um **header estatico**
+nas requisicoes, depois que elas saem da VM -- a chave nunca chega ao Claude nem
+as variaveis de ambiente. Mas a Google Sheets API so aceita
+`Authorization: Bearer <access_token>` OAuth2 de **vida curta**, obtido assinando
+um JWT com a chave privada da conta de servico. Nenhum header fixo autentica
+`sheets.googleapis.com`; chave de API so serve para dados publicos e nunca para
+escrita. Por isso existe o gateway.
+
+### O que isso resolve
+1. **Nenhuma chave JSON e gerada.** No Cloud Run a conta de servico e a
+   identidade de execucao do servico e o token vem do metadata server (ADC).
+2. **O token compartilhado fica no Google Secret Manager**, entregue ao servico
+   por `--set-secrets`. Na ponta do Claude ele existe so como API credential --
+   fora das variaveis de ambiente, ilegivel por qualquer comando da sessao.
+3. **A politica passa a ser imposta pelo servidor**, nao pela disciplina do
+   cliente: ID da planilha fixo, allowlist de abas, escrita so por append de uma
+   linha, largura conferida contra o cabecalho, Status validado, dedup por ID.
+   `batchUpdate` nao e alcancavel a partir da sessao.
+
+O alerta da UI ("anyone who uses the environment can read the values") continua
+valendo para variaveis de ambiente -- por isso nenhum segredo mora la. A unica
+variavel usada e `CRM_GATEWAY_URL`, que e apenas um endereco.
+
+### Reducao de alcance
+1. Projeto Google Cloud dedicado e conta de servico usada so nisto.
 2. Escopo unico: `https://www.googleapis.com/auth/spreadsheets`.
-3. Compartilhar **apenas esta planilha** com o e-mail da conta de servico como
-   Editor. Ela nao acessa mais nada do Drive nem a conta Google.
-4. Rede do ambiente: **Custom** com so `*.googleapis.com` e `accounts.google.com`
-   (marque tambem incluir os registries de pacotes -- o hook `SessionStart`
-   precisa alcancar o PyPI para montar o `.venv`).
-5. Revogar/rotacionar a chave a qualquer momento em Google Cloud > IAM >
-   Service Accounts > Keys, sem efeito na sua conta.
-6. `.gitignore` bloqueia `*.json` / `.env`; a chave nunca vai para o Git.
+3. Planilha compartilhada **apenas** com o e-mail da conta de servico (Editor).
+4. API credential restrita ao **host exato** do servico Cloud Run -- nunca
+   `*.run.app`, que entregaria o token a qualquer servico Cloud Run.
+5. Token rotacionavel a qualquer momento (nova versao no Secret Manager,
+   redeploy, recadastro da credential).
+6. `.gitignore` bloqueia `*.json` / `.env`.
+
+## Deploy
+**Executado e validado em 11/09/2026.** Runbook completo, incluindo os requisitos
+de faturamento, em [`docs/deploy-gateway.md`](docs/deploy-gateway.md).
+
+| Verificacao | Resultado |
+|---|---|
+| Host do servico | `crm-sheets-gateway-888305689319.southamerica-east1.run.app` |
+| API credential (host exato, sem curinga) | ativa -- o `200` so acontece com o token injetado |
+| `POST /health` | `200` -- `{"status":"ok"}` |
+| `POST /v1/config` | `200` -- `spreadsheet_id` e allowlist conferem |
+| Teste de escrita | `TESTE-CONEXAO-20260911-101325`, Status `Concluída` |
+| Readback | confere com o gravado |
+
+Detalhe util: **todas as rotas `/v1/*` sao POST**. Um `GET` devolve
+`405 Method Not Allowed` -- e a rota respondendo, nao o servico fora do ar.
+
+Resumo do faturamento: Cloud Run, Artifact Registry, Cloud Build e Secret
+Manager **exigem uma conta de faturamento vinculada ao projeto**, mas o uso
+previsto (uma execucao diaria) cabe com folga nos free tiers -- fatura esperada
+de **R$ 0/mes**.
 
 ## Preparacao do ambiente
 O campo de **setup do ambiente de nuvem fica vazio de proposito**. Quem prepara
@@ -44,30 +79,37 @@ o Python e o hook `SessionStart` do repositorio:
   localiza o repo por `CLAUDE_PROJECT_DIR`, cria `.venv` isolado
   (**sem** `--system-site-packages`), instala `requirements.txt` e roda `pip check`.
   `pip check` falhando aborta o hook com status != 0.
-- Registrado em `.claude/settings.json`. Passa a valer para toda sessao nova
-  depois que o commit chegar no branch padrao.
-- E idempotente: se o `.venv` ja existe, o pip so confere o que falta.
+- Registrado em `.claude/settings.json`. E idempotente.
 
 Por que o `.venv` isolado importa: a imagem da VM traz um `cryptography 41.0.7`
 do Debian **quebrado** (sem `_cffi_backend`). O `google-auth` importa
 `cryptography` ao carregar `service_account`, e o panico do binding Rust nao e
-capturado pelo `try/except ImportError` -- a autenticacao morreria ali. O `.venv`
-nao enxerga `dist-packages`, entao a versao do PyPI prevalece e o problema some
-sem mexer no Python do sistema.
+capturado pelo `try/except ImportError`. O `.venv` nao enxerga `dist-packages`,
+entao a versao do PyPI prevalece.
 
-`cryptography` e `cffi` **nao** precisam entrar no `requirements.txt`: chegam
-como dependencia transitiva de `google-auth` (verificado com `pip show` e
-`pip check` em venv limpo).
-
-Localmente (fora da nuvem), o mesmo passo a mao:
+Localmente, o mesmo passo a mao:
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
+## Testes
+Nenhum toca a rede, o Google ou a planilha -- a Sheets API e substituida por um
+duble que tambem **falha se alguem chamar `batchUpdate`**.
+
+```bash
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+- `tests/test_gateway.py` -- politica do servidor (auth, allowlist, largura do
+  cabecalho, Status, dedup, tabelas nativas, dropdowns).
+- `tests/test_client_gateway.py` -- ponta a ponta: `sheets_client` e
+  `verify_write` reais falando HTTP com o gateway real.
+
 ## Uso manual
-Sempre pelo interpretador do `.venv` -- o `python` do sistema nao tem as
-dependencias e traz o `cryptography` quebrado.
+Sempre pelo interpretador do `.venv`. Exige `CRM_GATEWAY_URL` definida e a API
+credential cadastrada.
 
 ```bash
 .venv/bin/python inspect_base.py                      # cabecalhos, limites, tabelas, IDs
@@ -86,6 +128,44 @@ Usa a escrita menos invasiva (`values.append` + `INSERT_ROWS`, nunca
 que os dropdowns sejam herdados -- por isso a verificacao roda sempre e reporta
 `PASS` / `ATENCAO` sem corrigir nada automaticamente.
 
+### O que a inspecao de 11/09/2026 mostrou
+**Dropdown preservado, por heranca de coluna.** A lista fechada de Status nao e
+validacao por celula -- nenhuma celula da coluna D tem `dataValidation`. Ela vive
+nas propriedades de coluna da tabela nativa (`columnType: DROPDOWN` +
+`dataValidationRule`) e alcanca toda linha dentro do range da tabela. Logo, linha
+gravada dentro da tabela herda o dropdown sem precisar de nada.
+
+Efeito colateral no `verify_write.py`: a checagem 4 procura `dataValidation` por
+celula e imprime "nenhuma validacao/dropdown detectada" mesmo com o dropdown
+correto. Nessa aba o sinal que vale e a checagem 3 (cobertura da tabela nativa).
+
+**Linhas em branco antes do registro -- resolvido.** O teste tinha caido na linha
+502, com 2-501 vazias, porque `values.append` grava apos o fim do **range da
+tabela nativa** -- e `CRM_Execucoes` foi criada como `A1:J501`, ou seja,
+cabecalho mais 500 linhas reservadas. As tres tabelas nasceram assim.
+
+A correcao foi a menor possivel e feita **a mao na UI do Sheets** (o gateway nao
+expoe `batchUpdate` de proposito): apagar as linhas reservadas, encolhendo cada
+tabela ate o conteudo real. Estado conferido depois, so leitura:
+
+| Aba | Tabela | Range | Linha de dados |
+|---|---|---|---|
+| `Leads` | `CRM_Leads` | `A1:W2` | 1, vazia |
+| `Acompanhamento` | `CRM_Acompanhamento` | `A1:L2` | 1, vazia |
+| `Execuções` | `CRM_Execucoes` | `A1:J2` | 1, com o registro de teste |
+
+Nada se perdeu no redimensionamento: cabecalhos com as 23, 12 e 10 colunas
+originais, e os dropdowns de coluna todos de pe -- `Encaixe no perfil`, `Etapa`,
+`Canal` e `Status`. Era esperado, ja que a regra e propriedade de **coluna** da
+tabela e nao das celulas.
+
+**O que ainda depende do primeiro append real.** `Leads` e `Acompanhamento`
+ficaram com uma linha de dados vazia dentro do range. O append pode preencher
+essa linha 2 ou entrar na 3 estendendo a tabela -- a API nao documenta o caso da
+linha reservada vazia, e sem gravar nao da para saber. O `verify_write.py`
+reporta a linha exata; vale conferir no primeiro lead de verdade em vez de supor.
+
 ## Ativacao futura (nao agora)
-`prospect.py` esta inerte. A Routine diaria so sera criada apos o teste de
-conexao validado e autorizacao explicita.
+`prospect.py` continua inerte. Deploy, teste de conexao e limpeza das tabelas ja
+estao validados; falta apenas a **autorizacao explicita** do Jonny para criar a
+Routine diaria.

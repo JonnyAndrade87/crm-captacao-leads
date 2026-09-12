@@ -8,7 +8,7 @@ para deducao / verificacao de duplicados.
 
 from __future__ import annotations
 
-from sheets_client import get_structure, read_range, spreadsheet_id
+from sheets_client import describe_auth, get_structure, read_range, spreadsheet_id
 
 TABS = ["Leads", "Acompanhamento", "Não contatar", "Execuções", "Configuração"]
 
@@ -18,6 +18,7 @@ def _ids(a1_range: str) -> list[str]:
 
 
 def main() -> None:
+    print(describe_auth())
     print(f"Planilha: {spreadsheet_id()}\n")
 
     struct = get_structure()
